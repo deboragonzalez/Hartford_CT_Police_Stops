@@ -1,2 +1,4 @@
-# Hartford_CT_Police_Stops
-Visual Analysis of Hartford Police Stops 2013-2016
+# Hartford CT Policing
+Visual Analysis of Hartford Police Stops Data from the Standford Open Policing Project 2013-2016
+
+
