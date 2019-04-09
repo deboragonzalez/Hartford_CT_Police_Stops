@@ -1,0 +1,100 @@
+---
+title: "Visual Analysis of Police Arrest in Hartford, CT"
+author: "Debi Gonzalez"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(sf)
+library(fs)
+library(gt)
+library(ggplot2)
+library(ggthemes)
+library(gganimate)
+library(png) 
+
+# These libraries I have added as I work and are necessary for the different visual representations of the data I'm using.
+```
+
+```{r Data Setup, include = FALSE, echo = FALSE}
+
+# Automatically downloading the rds file with the data for Hartford, CT like we did in class. 
+
+hartford <- read_rds(url("https://stacks.stanford.edu/file/druid:tr137st9964/tr137st9964_ct_hartford_2019_02_25.rds"))
+
+# Data for later map. Requires a destination file and needs to be untared in order to unzip the files it stores. Then, using read_sf I can select the shapes file (.shp) that I will use for my map. Finally, file.delete helps me to keep my workspace clean.
+
+download.file(url = "https://stacks.stanford.edu/file/druid:tr137st9964/tr137st9964_ct_hartford_shapefiles_2019_02_25.tgz", destfile = "shapes.tgz", quiet = TRUE) 
+
+untar("shapes.tgz")
+
+shapes_data <- read_sf("ct_hartford_shapefiles/Hartford_Neighborhoods.shp")
+
+file_delete(c("shapes.tgz", "ct_hartford_shapefiles/"))
+
+```
+
+### Arrest Distribution by Race and Sex
+
+```{r Arrest Made Distribution, echo = FALSE}
+
+# Percentage of Arrests Made by Race and Sex Out of Total Stops
+
+# I want 10 groups: 5 races by 2 genders, so I grouped by race and sex. I needed to create new variables summing all the arrests made (binary variable where true = 1 and false =0) and the total number of stops (n). Then, I can create arrests/total to find the rate and since I have grouped, it will give me the rate per race and per sex. Then, I selected the variables I would be using in order to spread by gender -- making gender new columns and making arrest rate their value. Now, I have a rate by sex and by race clearly divided. Before I format with gt I need to ungroup so that it doesn't create subtabs under each race. 
+
+hartford %>%
+  group_by(subject_race, subject_sex) %>%
+  summarize(arrest = sum(arrest_made),
+            total = n()) %>% 
+  mutate(arrest_rate = arrest/total) %>% 
+  select(subject_race, subject_sex, arrest_rate) %>% 
+#  fct_relevel(subject_race, hispanic = "Hispanic", black = "Black", white = "White", asian/pacific islander= "Asian", other/unknown = "Other") %>%
+  spread(subject_sex, arrest_rate) %>%
+  ungroup() %>% 
+  gt() %>% 
+    fmt_percent(columns = vars(male, female), decimals = 1) %>% 
+    tab_spanner(label = "Arrest Rate by Sex", vars(male, female)) %>% 
+    cols_label(subject_race = "Race", male = "Male", female = "Female") %>%
+    tab_header(title = "Rate of Hartford Police Stops that End in Arrest",
+               subtitle = "arrest rate by race and sex in Hartford, CT from 2013 -- 2016") %>%
+    tab_source_note(source_note = "Source: Standford Open Policing Project") 
+
+  # After formatting with gt, I decided to use fmt_percent to change the values under the columns of male and female (meaning the arrest rates that I just spread) into percents with one decimal place. After this, it's a matter of labeling. tab_spanner allows me to label groups of columns at a time, so that I can show that those columns show arrest rate subdivided by sex by grouping the two columns into one called "Arrest Rate by Sex". Then, cols_label titles my columns with pretty labels. Added a title and subtitle that seemed appropriate based on the data and groups represented in the graphic. Ofc, I also added a source. 
+```
+
+
+### Arrests of Black Individuals by Sex
+```{r Race Arrests, echo = FALSE}
+# I want to display the arrests of black individuals by sex from 2013-2016. In the set up chunk I already loaded (and untarred) the dataset and the shape files needed for this question. So, I am ready to start manipulating the data and plugging in the shapes data into the ggplot and geom_sf. 
+
+arrest <- hartford %>% 
+  filter(arrest_made == TRUE) %>% 
+  filter(subject_race %in% c("black")) %>%
+  filter(lng >= -72.72 & lng <= -72.6, 
+         lat >= 41.7 & lat <= 42) %>% 
+  drop_na(lng, lat)
+# Once the non-arrest and non-black stops are filtered out, I have to get rid of nonexistent latitude and longitude values that are not graphable. Then, I used google maps to find the southernmost, northernmost, westernmost, and easternmost latitudes and longitudes to create the appropriate ranges for my map. The range can be formed filter lat and lng respectively. 
+
+arrest_locations <- st_as_sf(arrest, 
+                             coords = c("lng", "lat"), 
+                             crs = 4326) 
+
+# This new clean dataset needs to be placed into st_as_sf in order to make it usable for a map graphic with geom_sf. We are using lat and lng as our coordinates and 4326 as crs given that this is value used by GPS systems and other professional maps. 
+
+ggplot(data = shapes_data) +
+  geom_sf() +
+  geom_sf(data = arrest_locations, aes(color = subject_sex), show.legend = FALSE) + 
+  theme_map() + 
+  scale_color_manual(breaks = c("female", "male"),
+                     values = c("blue", "violetred")) +
+  labs(title = "Location of Police Stops that Ended in Arrests",
+       subtitle = "Arrests of Black Individuals by Sex in Hartford, CT from 2013 -- 2016", 
+       caption = "Source: Stanford Open Policing Project")
+
+# In ggplot we need to load in the shapes data in order to set up the map. First geom_sf is used for that shape data. The second geom_sf is where I load in my newly converted to sf data "arrest_locations" from my initial dataset. Because I want to show sex distinction I included aesthetics/color. I later came back and turned the legend off when I manually changed the colors to be blue for males and violetred for females. Using the online r colors guide, I figured out how to manually change the colors for sex with scale_color_manual. I used theme_map like in class to create a more professional graphic. Then, ofcourse I added descriptive labels. 
+
+```
